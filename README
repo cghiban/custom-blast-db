@@ -1,0 +1,106 @@
+####
+@2018-03-26
+
+
+0. (optional) make sure you've loaded older data into sqlite db (see step #6 how to do this)
+
+1. search for new data
+  - edit UTIL_PHY_BLAST
+  - run bin/phy_blast_get_ids.pl
+
+  * the result of this is a list of accesstions sorted by data (newest first) 
+    save into the specified directory
+
+2. find new accestions using bin/find_new_accns.pl, eg:
+
+    $ parallel --jobs 2 "cat {} | perl bin/find_new_accns.pl tmpfs/test2.db  >{.}-new.txt" ::: $(ls fasta-20180323-COI/300-0*.txt|grep -v new.txt)
+    
+    - new accessions are stored into *-new.txt files (some will be ampty)
+
+3. remove empty -new.txt files
+
+    $ find fasta-20180323-COI/ -size 0c -exec rm  {} \;
+
+4. get data for the new accessions in genbank format
+
+    $ parallel --jobs 2 bin/phy_blast_get_accn_data.sh {} gb ::: fasta-20180323-COI/300-*-new.txt
+
+5. check if have all the data:
+
+    $ grep ^LOCUS fasta-20180323-COI/300-0*.gb|wc -l
+    $ cat fasta-20180323-COI/300-0*-new.txt|wc -l
+
+6. load new data into SQlite db:
+
+    $ parallel --jobs 2 perl bin/load_db.pl tmpfs/test2.db  {} ::: fasta-20180323-COI/300-*-new.gb
+
+7. make a backup of the database
+
+    $ pigz -p8 -c tmpfs/test2.db > test2-20180326.db.gz
+
+8. extract fasta 
+    based on all accession number from #1, extract all data based on what we have in the database
+
+    - search for all the accession numbers in the given file, group them by file, 
+      and return only the data for those accessions
+    $ parallel --jobs 2 \
+        perl bin/extract_gb_using_db.pl tmpfs/test2.db {}  ">"{.}.fasta \
+        ::: $(ls fasta-20180323-COI/300-0*.txt|grep -v new.txt)
+
+9. remove empty fasta files
+
+    $ find fasta-20180323-COI/ -size 0c -exec rm  {} \;
+
+
+*** TO BUILD the Qiime2 database continue to A1. ***
+*** TO BUILD the Blue line blast database continue to B1. ***
+
+A1. we need to use biosql now
+
+    $ cd ~/work/dnalc/biosql/ # on gigel
+    $ mkdir -p output && rm -v ./output/*
+    $ scp compute-server:/data/zmeu_restore/data/phy_blast/fasta-20180323-COI-vertebrates.fasta .
+    $ time perl test-local-lineage.pl .
+    #  or
+    $ time bin/build-taxonomy.pl fasta-20180323-COI/
+    $ ls -lh ./output/
+
+A2. create the database/qiime2 (we'll use qiime2-docker, the version matters)
+
+    $ scp output/* greuceanu:/data/ghiban/qiime-coi
+    $ docker run --rm -ti -v $PWD:/data:Z --entrypoint /bin/bash dnasubway-pl
+    # ls
+    fs_otu_taxonomy.txt  fs_otus.txt  tmp
+
+    # time qiime tools import --type 'FeatureData[Sequence]' --input-path fs_otus.txt --output-path otus.qza
+    # qiime tools import --type 'FeatureData[Taxonomy]'  --source-format HeaderlessTSVTaxonomyFormat --input-path fs_otu_taxonomy.txt --output-path ref-taxonomy.qza
+
+    # XXX this may take a long time..
+    # time qiime feature-classifier extract-reads --i-sequences otus.qza --p-f-primer GGWACWGGWTGAACWGTWTAYCCYCC --p-r-primer GGRGGRTASACSGTTCASCCSGTSCC  --p-trunc-len 290 --verbose --o-reads ref_seqs_coi_vertebrates.qza
+
+    # time qiime feature-classifier fit-classifier-naive-bayes --i-reference-reads ref_seqs_coi_vertebrates.qza --i-reference-taxonomy ref-taxonomy.qza --o-classifier coi-vertebrates-2017.8.qza
+
+    # save the history
+    # history > history.txt
+
+    # exit # at this point the docker container is destroid
+
+    # add this file to the purple line config[.live]/UBIOME
+    $ ls -lh coi-vertebrates-2017.8.qza
+
+
+*** BLAST DB ***
+
+B1. filter all the fasta (only 10 duplicate sequences per organism)
+
+    $ time perl bin/filter_fasta_to_stdout.pl fasta-20171101/ > fasta-20171101.fasta
+
+B2. create the database
+
+    $ makeblastdb -in fasta-20171101.fasta -input_type fasta  -title blueline-201711 -parse_seqids -dbtype nucl -out phydb201711
+
+B3. copy it to the blast server
+
+    $ scp  -P 1234  phydb201711.* admin@blast-server:blastdb/
+
+

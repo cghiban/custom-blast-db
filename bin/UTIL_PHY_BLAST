@@ -1,0 +1,50 @@
+{
+    SERVICE => 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils',
+    DB => 'nuccore',
+    TERMS => [
+        'mitochondrion',
+        'mitochondrial',
+        'COI',
+        'COX1',
+        'cytochrome c oxidase subunit I',
+        'cytochrome oxidase subunit I',
+    ],
+    TERMS_ => [
+        'lef9',
+        'chloroplast',
+        'barcode',
+        'mitochondrion',
+        'mitochondrial',
+        'rbcl',
+        'matk',
+        'COI',
+        'COX1',
+        'cytochrome c oxidase subunit I',
+        'cytochrome oxidase subunit I',
+        'ITS1',
+        'ITS2',
+        '5.8S rRNA', 
+        '5.8S ribosomal RNA',
+        '12S rRNA',
+        '12S ribosomal RNA',
+        '16S rRNA',
+        '16S ribosomal RNA',
+        '18S rRNA',
+        '18S ribosomal RNA',
+        '23S rRNA',
+        '23S ribosomal RNA',
+        '25S rRNA',
+        '25S ribosomal RNA',
+        '28S rRNA',
+        '28S ribosomal RNA',
+    ],
+    TMP => '/data/zmeu_restore/data/phy_blast/fasta-20180323-COI',
+    BATCH_SIZE => 300,
+    ONLY_VERTEBRATA => 1, # adds 'AND "Vertebrata"[porgn:__txid7742]' filter
+    ONLY_METAZOA => 0, # adds 'AND "Metazoa"[porgn:__txid33208]' filter
+    EXCLUDE_TERMS => [
+        #'"Homo sapiens"[porgn]',
+        #'"Canis lupus"[porgn]',
+    ]
+}
+
