@@ -13,9 +13,15 @@
 
 2. find new accestions using bin/find_new_accns.pl, eg:
 
+    ## load the db into the cache
+    $ vmtouch -vt tmpfs/test2.db
+
     $ parallel --jobs 2 "cat {} | perl bin/find_new_accns.pl tmpfs/test2.db  >{.}-new.txt" ::: $(ls fasta-20180323-COI/300-0*.txt|grep -v new.txt)
     
     - new accessions are stored into *-new.txt files (some will be ampty)
+
+    ## evict the db from the cache
+    $ vmtouch -ve tmpfs/test2.db
 
 3. remove empty -new.txt files
 

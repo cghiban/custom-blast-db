@@ -9,7 +9,8 @@ use Cwd 'cwd';
 
 # set if you're only interested in one gene/products
 # undef if you want everything
-my $FILTER_BY_PRODUCT = 'cytochrome oxidase subunit I';
+#my $FILTER_BY_PRODUCT = 'cytochrome oxidase subunit I';
+my $FILTER_BY_PRODUCT = '16S ribosomal RNA';
 
 
 sub get_db {
@@ -132,5 +133,5 @@ for my $gb (keys %$dbdata) {
         #next;
         #last;
     } # end while
-    last;
+    #last;
 } #end for

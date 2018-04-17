@@ -10,6 +10,7 @@
 
 INFILE=$1
 FORMAT=$2
+RETRY=$3
 if [[ -z $INFILE ]]; then
     echo "E: missing argument <file>"
     exit 1
@@ -25,8 +26,9 @@ if [[ -z $FORMAT ]]; then
 fi
 
 
-echo "#-------------------------------"
-echo -e " + processing $INFILE"
+#echo "#-------------------------------"
+echo ""
+echo -e "++ processing $INFILE"
 
 OUTFILE=${INFILE/\.*/.$FORMAT}
 #if [[ ! $OUTFILE =~ \.fasta$ ]]; then
@@ -34,11 +36,16 @@ OUTFILE=${INFILE/\.*/.$FORMAT}
 #fi
 
 if [[ -f $OUTFILE ]]; then
-    #echo " - output file ${OUTFILE} already exists. Skipping..."
-    exit 0
+	if [[ -n $RETRY ]]; then
+		rm -v $OUTFILE
+        sleep 2
+	else
+		#echo " - output file ${OUTFILE} already exists. Skipping..."
+		exit 0
+	fi
 fi
 
-echo " + output to be stored in $OUTFILE"
+#echo " + output to be stored in $OUTFILE"
 
 IDLIST=$(cat $INFILE | grep -v '^$' |perl -pe 's/\n/,/'|perl -pe 's/,+$//')
 
@@ -49,7 +56,7 @@ fi
 #echo " + IDLIST=${IDLIST}"
 #exit 0
 
-EPOSTOUT=$(curl -sk -X POST -d "id=${IDLIST}&email=dnalcadmin@cshl.edu&db=nuccore" https://eutils.ncbi.nlm.nih.gov/entrez/eutils/epost.fcgi)
+EPOSTOUT=$(curl -sk -X POST -d "id=${IDLIST}&email=dnalcadmin@cshl.edu&db=nuccore" https://eutils.ncbi.nlm.nih.gov/entrez/eutils/epost.fcgi?api_key=52c54beb52f12c1446fbd45067052835a108)
 
 #set -x
 
@@ -61,7 +68,12 @@ WE=$(echo -e $EPOSTOUT | grep WebEnv | perl -pwe 's#.*<WebEnv>(.*?)</WebEnv>.*#$
 #echo " + WE=${WE}"
 
 if [[ -z $WE ]]; then
-    echo -e "Can't extract WebEnv from EPOSTOUT:\n${EPOSTOUT}"
+    echo -e "E: Can't extract WebEnv from EPOSTOUT:\n${EPOSTOUT}"
+	# try again
+	if [[ -z $RETRY ]]; then
+		echo "++ retrying..."
+		$0 $INFILE $FORMAT retry
+	fi
     exit 1
 fi
 
@@ -72,6 +84,11 @@ curl -s -o $OUTFILE "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?d
 CEXIT=$?
 if [[ $CEXIT != 0 ]]; then
     echo " E: curl exit code: ${CEXIT}"
+	if [[ -z $RETRY ]]; then
+		echo "++ retrying..."
+		$0 $INFILE $FORMAT retry
+        exit 1
+	fi
 fi
 
 if [[ $FORMAT == "fasta" ]]; then
@@ -80,6 +97,21 @@ if [[ $FORMAT == "fasta" ]]; then
 else
     ENTRIES=$(grep "^LOCUS" $OUTFILE|wc -l)
     echo -e " = ${OUTFILE}\t${ENTRIES}"
+	if [[ "${ENTRIES}" == "0" ]]; then
+		if [[ -z $RETRY ]]; then
+			echo "++ retrying..."
+			$0 $INFILE $FORMAT retry
+            exit 1
+		fi
+	fi
+fi
+
+# if we have xhtmls tags, retry
+if [[ -n $(grep XHTML $OUTFILE) ]]; then
+    echo "++ xHTML detected.. retrying..."
+    sleep 2
+    $0 $INFILE $FORMAT retry
+    exit 1
 fi
 
 sleep 1
