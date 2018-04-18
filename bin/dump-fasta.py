@@ -54,6 +54,9 @@ db_file = sys.argv[1]
 # this is the file with a list of accesstions
 input_file = sys.argv[2]
 
+
+t0 = time.time()
+
 # only look for certain products, eg:
 #  cytochrome oxidase subunit I
 #  16S ribosomal RNA
@@ -73,32 +76,31 @@ with open(input_file) as f:
         accns.append(id)
         #daccns[id] = 1
 
-#eprint(len(accns))
-found = 0
-x = 0
-
 data = search(db_file, accns)
 for gb in data:
-    eprint(gb, len(data[gb]))
-    #x += len(data[gb])
+    eprint("   ", gb, len(data[gb]))
 
     if not os.path.exists(gb):
+        eprint('E: missing file:', gb)
         continue
 
     accns = {a:1 for a in data[gb]}
     #print(accns)
 
-#if True:
-    #gb = '300-01963-new.gb'
-    #gb = '300-01892-new.gb'
-    #gb = 'aaa.gb'
-    t0 = time.time()
-    for seq in SeqIO.parse(gb, "genbank"):
-        if seq.id not in accns:
+    gbiter = SeqIO.parse(gb, "genbank")
+    while True:
+        seq = None
+        try:
+            seq = next(gbiter)
+            #eprint(seq.id)
+        except ValueError as ex:
+            eprint('E: ingnoring entry.', ex)
+        except StopIteration as ex:
+            break
+
+        if seq is None or seq.id not in accns:
             continue
-        #if seq.id in daccns:
-        #    found += 1
-        #eprint(seq.id, len(seq.features))
+
         features = [
                 f for f in seq.features if f.type in ['source', 'rRNA']
             ]
@@ -128,19 +130,22 @@ for gb in data:
         seq_len = len(info['seq']) if 'seq' in info else 0
         if (seq_len < 150 or seq_len > 9000):
             continue
+        taxon = ''
+        if 'db_xref' in info:
+            taxon = info['db_xref'][6:]
 
         classification = ','.join(seq.annotations['taxonomy'])
         seq_id = '; '.join([
                 seq.id,
                 '='.join(['organism', seq.annotations['organism']]),
-                '='.join(['taxon', info['db_xref'][6:]]),
+                '='.join(['taxon', taxon]),
                 '='.join(['classification', classification]),
                 seq.description
             ])
         print(">%s\n%s\n" % (seq_id, info['seq']))
         #break
-    ss = time.time() - t0
-    eprint("BioPython:", ss, "seconds")
 
-eprint("found:", found)
+ss = time.time() - t0
+eprint("Done:", input_file, 'in', ss, 'seconds\n')
+
 
