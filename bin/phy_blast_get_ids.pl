@@ -7,11 +7,12 @@ use Carp ();
 use FindBin;
 use IO::File ();
 use File::Spec ();
+use File::Copy;
 use XML::Simple ();
 use Parallel::ForkManager ();
 use LWP::UserAgent ();
 use Data::Dumper;
-use  Time::HiRes qw(sleep);
+use Time::HiRes qw(sleep);
 
 sub config {
     my ($file) = @_;
@@ -40,8 +41,10 @@ sub query_entrez {
 sub get_entrez_data {
     my ($cf, %params) = @_;
 
+    my $APIKEY = $cf->{APIKEY};
+
 	my $ua = LWP::UserAgent->new;
-	$ua->from('dnalcadmin@cshl.edu');
+	$ua->from($cf->{EMAIL});
 
     my $SORTBY = 'MDAT'; # or ACCN
 
@@ -49,8 +52,8 @@ sub get_entrez_data {
     if (exists $params{op} && $params{op} eq 'search') {
         # XXX user sort=ACCN
         my @terms = sort @{$cf->{TERMS}};
-		$query = "esearch.fcgi?db=nuccore&usehistory=y&sort=$SORTBY"
-			. '&term=(300:20000[SLEN])+AND+(' . join('+OR+', map {qq{"$_"}} @terms) . ')';
+		$query = "esearch.fcgi?db=nuccore&usehistory=y&sort=$SORTBY&api_key=$APIKEY"
+			. '&term=(300:10000[SLEN])+AND+(' . join('+OR+', map {qq{"$_"}} @terms) . ')';
         if ($cf->{ONLY_VERTEBRATA}) {
             $query .= '+AND+Vertebrata[porgn:__txid7742]';
         }
@@ -65,7 +68,7 @@ sub get_entrez_data {
 		my $batch_size = $cf->{BATCH_SIZE} || 500;
 
         # rettype for nuccore: acc, fasta, seqid, native(xml)
-        $query = 'efetch.fcgi?db=nuccore'
+        $query = "efetch.fcgi?db=nuccore&api_key=$APIKEY"
 		    . '&rettype=acc&WebEnv=' . $params{webenv}
 			. '&query_key=' . $params{qkey}
 			. '&retstart=' . $params{from}
@@ -83,6 +86,7 @@ sub get_entrez_data {
 		? $ua->get($url, ':content_file' => $params{file})
 		: $ua->get($url);
 	#print STDERR  $resp, $/;
+    #print STDERR 'length($resp->content):', length($resp->content), "\n";
     my $content = '';
 	if ($resp->is_success && !$params{file}) {
 		$content = $resp->content;
@@ -107,7 +111,8 @@ sub get_entrez_data {
 
 # main
 
-my $cf = config("$FindBin::Bin/UTIL_PHY_BLAST");
+my $config_file = "$FindBin::Bin/UTIL_PHY_BLAST";
+my $cf = config($config_file);
 
 # perform search
 # http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nuccore&term=mitochondrion[Filter]&usehistory=y
@@ -120,6 +125,9 @@ my $cf = config("$FindBin::Bin/UTIL_PHY_BLAST");
 # #of both searches ($key1 and $key2)
 
 mkdir $cf->{TMP};
+
+# make a copy of the config file
+copy $config_file, File::Spec->catfile($cf->{TMP}, '.config');
 
 #2. parse result, get WebEnv & QueryKey & Count
 #   TODO store these values into a .query file so we can attempt 
@@ -167,13 +175,13 @@ print STDERR  "\nWebEnv:\t$webenv\nCount:\t$count\nQueryKey:\t$qkey\n\n";
 my $batch_size = $cf->{BATCH_SIZE} || 500;
 
 # setting it to 0 with not fork (good for debugging)
-my $pm = new Parallel::ForkManager(4);
-$pm->run_on_start(
-    sub { my ($pid, $args ) = @_;
-        my ( $from, $count, $file_name ) = @$args;
-        #print " -- NEXT $from/$count\tfile: $file_name\n";
-    }
-);
+my $pm = new Parallel::ForkManager(5);
+#$pm->run_on_start(
+#    sub { my ($pid, $args ) = @_;
+#        my ( $from, $count, $file_name ) = @$args;
+#        #print " -- NEXT $from/$count\tfile: $file_name\n";
+#    }
+#);
 $pm->run_on_finish(
     sub { my ($pid, $exit_code, $args) = @_;
         my ( $from, $count, $file_name ) = @$args;
@@ -187,7 +195,7 @@ $pm->run_on_finish(
 my ($from, $file_num) = (- $batch_size, 0);
 
 while ($count >= $from) {
-    #last if $file_num > 20_000;
+    last if $file_num > 100;
     #
 
 	my $file_name = File::Spec->catfile( $cf->{TMP}, sprintf("%d-%05d.txt", $batch_size, $file_num) );
@@ -203,7 +211,7 @@ while ($count >= $from) {
 
     $pm->start([$from, $count, $file_name]) and next; # do the fork
 
-	my ($code, $fasta, $tries) = (0, '', 3);
+	my ($code, $fasta, $tries) = (0, '', 4);
 	while ( $tries-- && $code != 200 ) {
             ($code, $fasta) = get_entrez_data(
                 $cf, 
@@ -216,6 +224,20 @@ while ($count >= $from) {
 				print STDERR  " >>>>> HTTP_RESPONSE_CODE: ", $code, ' >>>>> tries left: ', $tries, $/;
 				sleep 5;
 			}
+            else { # see if we have any errors in there
+                open(my $fh, '<', $file_name) or die $!;
+                while(my $line = <$fh>) {
+                    #print STDERR " (*) ", $line;
+                    if ($line =~ /DOCTYPE|XHTML|\/ERROR/) {
+                        $code = -1;
+                        last;
+                    }
+                }
+                close $fh;
+                if ($code == -1) {
+                    print STDERR  " >>>>> BAD data: ", $code, ' >>>>> tries left: ', $tries, $/;
+                }
+            }
     }
 
     # no longer needed, GZIPPED output
@@ -225,10 +247,10 @@ while ($count >= $from) {
         $pm->finish; # do the exit in the child process
 		#next;
 	}
-	#last if $from > 4000;
+	#last if $from > 400;
 	#print STDERR  "\n";
 
-	sleep 2;
+	sleep 1;
     $pm->finish; # do the exit in the child process
 } # END main while
 
