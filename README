@@ -1,5 +1,5 @@
 ####
-@2018-03-26
+@2019-05-03
 
 
 0. (optional) make sure you've loaded older data into sqlite db (see step #6 how to do this)
@@ -8,14 +8,13 @@
   - edit UTIL_PHY_BLAST
   - run bin/phy_blast_get_ids.pl
 
-  * the result of this is a list of accesstions sorted by data (newest first) 
-    save into the specified directory
+  * the result of this is a list of accessions sorted by date (newest first) 
+    saved into the specified directory
 
     # export the work directory so we can re-use it later
-    #$ export RUNDIR=fasta-20180828-coi-vertebrata
     $ export RUNDIR=$(grep fasta bin/UTIL_PHY_BLAST|sed -e"s/.*'\(.*\)'.*/\1/")
 
-2. find new accestions using bin/find_new_accns.pl, eg:
+2. find new accessions using bin/find_new_accns.pl, eg:
 
     ## load the db into the cache
     $ vmtouch -vt tmpfs/test4.db
@@ -59,6 +58,7 @@
 6. load new data into SQLite db:
 
     #$ parallel --jobs 2 perl bin/load_db.pl tmpfs/test2.db  {} ::: fasta-20180323-COI/300-*-new.gb
+    #
     # make sure you set the right locale
     $ LANG=en_US.utf8 parallel --jobs 2 perl bin/load-gb.py tmpfs/test4.db  {} ::: $RUNDIR/250-*.gb
 
@@ -78,7 +78,7 @@
     # better/faster
     time parallel --jobs 8 python3 -W ignore bin/dump-fasta.py  tmpfs/test4.db {} ">"{.}.fasta ::: $RUNDIR/250-*.txt
     #
-    #or, if we have too mane *txt files and get "Argument list too long" error:
+    #or, if we have too many *txt files and get "Argument list too long" error:
     ls $RUNDIR|grep "\.txt$"| parallel --jobs 8 python3 -W ignore bin/dump-fasta.py  tmpfs/test4.db $RUNDIR/{} ">"$RUNDIR/{.}.fasta
 
 9. remove empty fasta files
@@ -110,7 +110,7 @@ A2. create the database/qiime2 (we'll use qiime2-docker, the version matters)
     # qiime tools import --type 'FeatureData[Taxonomy]'  --source-format HeaderlessTSVTaxonomyFormat --input-path fs_otu_taxonomy.txt --output-path ref-taxonomy.qza
 
     # XXX this may take a long time and it's optional
-    # time qiime feature-classifier extract-reads --i-sequences otus.qza --p-f-primer GGWACWGGWTGAACWGTWTAYCCYCC --p-r-primer GGRGGRTASACSGTTCASCCSGTSCC [--p-trunc-len NNN] --verbose --o-reads ref_seqs_coi_vertebrates.qza
+    # qiime feature-classifier extract-reads --i-sequences otus.qza --p-f-primer GGWACWGGWTGAACWGTWTAYCCYCC --p-r-primer GGRGGRTASACSGTTCASCCSGTSCC [--p-trunc-len NNN] --verbose --o-reads ref_seqs_coi_vertebrates.qza
 
     # time qiime feature-classifier fit-classifier-naive-bayes --i-reference-reads ref_seqs_coi_vertebrates.qza --i-reference-taxonomy ref-taxonomy.qza --o-classifier coi-vertebrates-2017.8.qza
 
@@ -144,4 +144,15 @@ B3. copy it to the blast server
 
     $ scp  -P 1234  phydb201711.* admin@blast-server:blastdb/
 
+# NOTE: sqlite schema
+
+CREATE TABLE entries (
+            id rowid,
+            accession text not null,
+            version text not null,
+            organism text not null,
+            modified_on date not null,
+            file text not null,
+            UNIQUE (version)
+        );
 
