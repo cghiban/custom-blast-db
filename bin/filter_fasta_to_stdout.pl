@@ -6,8 +6,12 @@ use IO::File ();
 use Bio::SeqIO ();
 use Data::Dumper;
 use Digest::SHA qw/sha256_hex/;
+use Readonly;
 
-# this is to filterout seqs with len outside of [300, 20_000]
+Readonly my $SEQ_LEN_MIN => 300;
+Readonly my $SEQ_LEN_MAX => 10_000;
+
+# this is to filterout seqs with len outside of [300, 10_000]
 # this is to filterout seqs that have the same DNA seq over 10 times
 # (allows for seq to be repeated only 10 times)
 
@@ -54,7 +58,7 @@ for my $file (sort <$dir/*.fasta>) {
 
 
 		my $slen = $seq->length;
-		if ($slen < 400 || $slen > 20_000) {
+		if ($slen < $SEQ_LEN_MIN || $slen > $SEQ_LEN_MAX) {
 			#print STDERR '   filtered out: ', "\t", $slen, "\t", $seq_id, "\n";
 			next;
 		}
@@ -72,7 +76,7 @@ for my $file (sort <$dir/*.fasta>) {
 
 		my $short_desc = join('', (split /\s+/, $desc)[0..3]);
 		my $hkey = join('-', $short_desc, sha256_hex($seq->seq));
-		if ($sha{ $hkey } ++ > 9) {
+		if ($sha{ $hkey } ++ > 4) {
 			print STDERR  '   filtered out: ', $hkey, ' ', sprintf("%3d", $sha{$hkey}), $/;
 			next;
 		}
@@ -81,6 +85,7 @@ for my $file (sort <$dir/*.fasta>) {
 		#	$seq->display_id( $seq_id . '|' . $ids{ $seq_id } );
 		#	print 'alter: ', $seq->display_id, $/;
 		#}
+        print STDERR $seq->display_id, "\t", $seq->id, "\t", $short_desc, "\n";
 		$out->write_seq($seq);
 		$okish ++;
 	}

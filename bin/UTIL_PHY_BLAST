@@ -1,15 +1,9 @@
 {
     SERVICE => 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils',
+    APIKEY => '',
+    EMAIL => '',
     DB => 'nuccore',
     TERMS => [
-        'mitochondrion',
-        'mitochondrial',
-        'COI',
-        'COX1',
-        'cytochrome c oxidase subunit I',
-        'cytochrome oxidase subunit I',
-    ],
-    TERMS_ => [
         'lef9',
         'chloroplast',
         'barcode',
@@ -19,8 +13,10 @@
         'matk',
         'COI',
         'COX1',
-        'cytochrome c oxidase subunit I',
         'cytochrome oxidase subunit I',
+        'cytochrome oxidase subunit 1',
+        'cytochrome c oxidase subunit I',
+        'cytochrome c oxidase subunit 1',
         'ITS1',
         'ITS2',
         '5.8S rRNA', 
@@ -38,10 +34,12 @@
         '28S rRNA',
         '28S ribosomal RNA',
     ],
-    TMP => '/data/zmeu_restore/data/phy_blast/fasta-20180323-COI',
-    BATCH_SIZE => 300,
-    ONLY_VERTEBRATA => 1, # adds 'AND "Vertebrata"[porgn:__txid7742]' filter
+    TMP => '/data/zmeu_restore/data/phy_blast/fasta-20190501',
+    BATCH_SIZE => 250,
+    ONLY_FISH => 0, # adds 'AND (Chondrichthyes[porgn:__txid7777] OR Dipnoi[porgn:__txid7878] OR Actinopterygii[porgn:__txid7898] OR Hyperotreti[porgn:__txid117565] OR Hyperoartia[porgn:__txid117569] OR Coelacanthimorpha[porgn:__txid118072])' filter
+    ONLY_VERTEBRATA => 0, # adds 'AND "Vertebrata"[porgn:__txid7742]' filter
     ONLY_METAZOA => 0, # adds 'AND "Metazoa"[porgn:__txid33208]' filter
+    ONLY_FUNGI => 0, # adds 'AND "Fungi"[porgn:__txid4751]' filter
     EXCLUDE_TERMS => [
         #'"Homo sapiens"[porgn]',
         #'"Canis lupus"[porgn]',

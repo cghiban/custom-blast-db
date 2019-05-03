@@ -22,6 +22,8 @@ def usage():
 def search(db, accns):
     data = {}
     conn = sqlite3.connect(db)
+    conn.execute('PRAGMA journal_mode = wal;')
+    conn.execute('PRAGMA page_size = 8192;')  #for faster reading
     c = conn.cursor()
     res = c.execute("""
             SELECT file,version
@@ -135,14 +137,13 @@ for gb in data:
             taxon = info['db_xref'][6:]
 
         classification = ','.join(seq.annotations['taxonomy'])
-        seq_id = '; '.join([
-                seq.id,
+        desc = '; '.join([
                 '='.join(['organism', seq.annotations['organism']]),
                 '='.join(['taxon', taxon]),
                 '='.join(['classification', classification]),
                 seq.description
             ])
-        print(">%s\n%s\n" % (seq_id, info['seq']))
+        print(">%s %s\n%s\n" % (seq.id, desc, info['seq']))
         #break
 
 ss = time.time() - t0

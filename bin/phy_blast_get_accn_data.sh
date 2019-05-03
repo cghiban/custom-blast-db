@@ -26,6 +26,13 @@ if [[ -z $FORMAT ]]; then
 fi
 
 
+# check if APIKEY was setup
+APIKEY=$(grep APIKEY bin/UTIL_PHY_BLAST|sed -e"s/.*'\(.*\)'.*/\1/")
+if [[ -z $APIKEY ]]; then
+    echo "E: missing APIKEY in the config file!"
+    exit 1
+fi
+
 #echo "#-------------------------------"
 echo ""
 echo -e "++ processing $INFILE"
@@ -56,7 +63,7 @@ fi
 #echo " + IDLIST=${IDLIST}"
 #exit 0
 
-EPOSTOUT=$(curl -sk -X POST -d "id=${IDLIST}&email=dnalcadmin@cshl.edu&db=nuccore" https://eutils.ncbi.nlm.nih.gov/entrez/eutils/epost.fcgi?api_key=52c54beb52f12c1446fbd45067052835a108)
+EPOSTOUT=$(curl -sk -X POST -d "id=${IDLIST}&email=dnalcadmin@cshl.edu&db=nuccore" https://eutils.ncbi.nlm.nih.gov/entrez/eutils/epost.fcgi?api_key=${APIKEY})
 
 #set -x
 

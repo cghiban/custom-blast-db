@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+#import locale
+#locale.getdefaultlocale = (lambda *args: ['en_US', 'utf8'])
+#locale.getlocale = (lambda *args: ['en_US', 'utf8'])
+
 from Bio import (SeqIO, BiopythonParserWarning)
 import time
 import sys
@@ -92,6 +96,7 @@ while True:
     except ValueError as ex:
         eprint('E: ingnoring entry.', ex)
     except StopIteration as ex:
+        #eprint('E: StopIteration:', ex)
         break
 
 if len(new_entries) == 0:

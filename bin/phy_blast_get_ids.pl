@@ -53,13 +53,24 @@ sub get_entrez_data {
         # XXX user sort=ACCN
         my @terms = sort @{$cf->{TERMS}};
 		$query = "esearch.fcgi?db=nuccore&usehistory=y&sort=$SORTBY&api_key=$APIKEY"
-			. '&term=(300:10000[SLEN])+AND+(' . join('+OR+', map {qq{"$_"}} @terms) . ')';
+			. '&term=is_nuccore[filter]'
+            . '+AND+(300[SLEN]:10000[SLEN])+AND+(' . join('+OR+', map {qq{"$_"}} @terms) . ')';
+
         if ($cf->{ONLY_VERTEBRATA}) {
             $query .= '+AND+Vertebrata[porgn:__txid7742]';
+        }
+        elsif ($cf->{ONLY_FISH}) {
+            $query .= '+AND+(Chondrichthyes[porgn:__txid7777]+OR+Dipnoi[porgn:__txid7878]'
+                . '+OR+Actinopterygii[porgn:__txid7898]+OR+Hyperotreti[porgn:__txid117565]'
+                . '+OR+Hyperoartia[porgn:__txid117569]+OR+Coelacanthimorpha[porgn:__txid118072])';
         }
         elsif ($cf->{ONLY_METAZOA}) {
             $query .= '+AND+Metazoa[porgn:__txid33208]';
         }
+        elsif ($cf->{ONLY_FUNGI}) {
+            $query .= '+AND+Fungi[porgn:__txid4751]';
+        }
+
         if ($cf->{EXCLUDE_TERMS} && @{$cf->{EXCLUDE_TERMS}}) {
             $query .= '+NOT+' . join('+NOT+', map {$_} @{$cf->{EXCLUDE_TERMS}});
         }
@@ -80,8 +91,9 @@ sub get_entrez_data {
     }
 
     my $url = $cf->{SERVICE} . '/' . $query;
-    #print STDERR ' ~~ ', $query, $/;
-    #exit 0;
+    print STDERR ' ~~ ', $query, $/
+        if (defined $params{op} && $params{op} eq 'search');
+
 	my $resp = (defined $params{file} && $params{file} ne '' && $params{from} ne '')
 		? $ua->get($url, ':content_file' => $params{file})
 		: $ua->get($url);
@@ -175,7 +187,7 @@ print STDERR  "\nWebEnv:\t$webenv\nCount:\t$count\nQueryKey:\t$qkey\n\n";
 my $batch_size = $cf->{BATCH_SIZE} || 500;
 
 # setting it to 0 with not fork (good for debugging)
-my $pm = new Parallel::ForkManager(5);
+my $pm = new Parallel::ForkManager(6);
 #$pm->run_on_start(
 #    sub { my ($pid, $args ) = @_;
 #        my ( $from, $count, $file_name ) = @$args;
@@ -195,7 +207,7 @@ $pm->run_on_finish(
 my ($from, $file_num) = (- $batch_size, 0);
 
 while ($count >= $from) {
-    last if $file_num > 100;
+    #last if $file_num > 100;
     #
 
 	my $file_name = File::Spec->catfile( $cf->{TMP}, sprintf("%d-%05d.txt", $batch_size, $file_num) );
@@ -221,7 +233,7 @@ while ($count >= $from) {
                 file => $file_name,
             );
 			if ($code != 200) {
-				print STDERR  " >>>>> HTTP_RESPONSE_CODE: ", $code, ' >>>>> tries left: ', $tries, $/;
+				print STDERR  " >>>>> FROM: $from\tHTTP_RESPONSE_CODE: ", $code, ' >>>>> tries left: ', $tries, $/;
 				sleep 5;
 			}
             else { # see if we have any errors in there
@@ -235,7 +247,7 @@ while ($count >= $from) {
                 }
                 close $fh;
                 if ($code == -1) {
-                    print STDERR  " >>>>> BAD data: ", $code, ' >>>>> tries left: ', $tries, $/;
+                    print STDERR  " >>>>> FROM: $from\tBAD data: ", $code, ' >>>>> tries left: ', $tries, $/;
                 }
             }
     }

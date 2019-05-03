@@ -11,51 +11,79 @@
   * the result of this is a list of accesstions sorted by data (newest first) 
     save into the specified directory
 
+    # export the work directory so we can re-use it later
+    #$ export RUNDIR=fasta-20180828-coi-vertebrata
+    $ export RUNDIR=$(grep fasta bin/UTIL_PHY_BLAST|sed -e"s/.*'\(.*\)'.*/\1/")
+
 2. find new accestions using bin/find_new_accns.pl, eg:
 
     ## load the db into the cache
-    $ vmtouch -vt tmpfs/test2.db
+    $ vmtouch -vt tmpfs/test4.db
 
-    $ parallel --jobs 2 "cat {} | perl bin/find_new_accns.pl tmpfs/test2.db  >{.}-new.txt" ::: $(ls fasta-20180323-COI/300-0*.txt|grep -v new.txt)
+    $ parallel --jobs 4 "cat {} | bin/find_new_accns.py tmpfs/test4.db >{.}.new" ::: $RUNDIR/250-*.txt
+    or
+    $ parallel --jobs 5 "bin/find_new_accns.py tmpfs/test4.db <{} >{.}.new" ::: $RUNDIR/250-*.txt
+    ###$ parallel --jobs 2 "cat {} | perl bin/find_new_accns.pl tmpfs/test2.db  >{.}.new" ::: $RUNDIR/300-0*.new
     
-    - new accessions are stored into *-new.txt files (some will be ampty)
+    - new accessions are stored into *.new files (some will be empty)
 
     ## evict the db from the cache
-    $ vmtouch -ve tmpfs/test2.db
+    $ vmtouch -ve tmpfs/test4.db
 
-3. remove empty -new.txt files
+3. remove empty *.new files
 
-    $ find fasta-20180323-COI/ -size 0c -exec rm  {} \;
+    $ find $RUNDIR/ -size 0c -exec rm  {} \;
+    or
+    $ find $RUNDIR/ -name \*.new -size 0c |xargs rm
 
 4. get data for the new accessions in genbank format
 
-    $ parallel --jobs 2 bin/phy_blast_get_accn_data.sh {} gb ::: fasta-20180323-COI/300-*-new.txt
+    $ parallel --jobs 2 bin/phy_blast_get_accn_data.sh {} gb ::: $RUNDIR/250-*.new
 
 5. check if have all the data:
 
-    $ grep ^LOCUS fasta-20180323-COI/300-0*.gb|wc -l
-    $ cat fasta-20180323-COI/300-0*-new.txt|wc -l
+    $ grep ^LOCUS $RUNDIR/250-0*.gb|wc -l
+    $ cat $RUNDIR/250-0*.new|wc -l
+    or
+    for i in $(ls $RUNDIR/250-0*.gb); do 
+        x=$(grep ^LOCUS $i|wc -l); 
+        new=${i/.gb/.new};
+        n=$(cat $new|wc -l);
+        [[ "$n" == "$x" ]] || echo -e "\trm $i && bin/phy_blast_get_accn_data.sh $new gb\t\"$x != $n\"";
+    done
 
-6. load new data into SQlite db:
+    ## vew any missing accns
+    $ vimdiff <(cat $RUNDIR/250-0*.new|sort) <(grep ^VERSION $RUNDIR/250-0*.gb|sed -e's/\s\+/\t/g'|cut -f2|sort)
 
-    $ parallel --jobs 2 perl bin/load_db.pl tmpfs/test2.db  {} ::: fasta-20180323-COI/300-*-new.gb
+
+6. load new data into SQLite db:
+
+    #$ parallel --jobs 2 perl bin/load_db.pl tmpfs/test2.db  {} ::: fasta-20180323-COI/300-*-new.gb
+    # make sure you set the right locale
+    $ LANG=en_US.utf8 parallel --jobs 2 perl bin/load-gb.py tmpfs/test4.db  {} ::: $RUNDIR/250-*.gb
 
 7. make a backup of the database
 
-    $ pigz -p8 -c tmpfs/test2.db > test2-20180326.db.gz
+    $ pigz -p8 -c tmpfs/test4.db > test4-$(date +"%Y%m%d").db.gz
 
 8. extract fasta 
     based on all accession number from #1, extract all data based on what we have in the database
 
-    - search for all the accession numbers in the given file, group them by file, 
-      and return only the data for those accessions
-    $ parallel --jobs 2 \
-        perl bin/extract_gb_using_db.pl tmpfs/test2.db {}  ">"{.}.fasta \
-        ::: $(ls fasta-20180323-COI/300-0*.txt|grep -v new.txt)
+    #- search for all the accession numbers in the given file, group them by file, 
+    #  and return only the data for those accessions
+    #$ parallel --jobs 2 \
+    #    perl bin/extract_gb_using_db.pl tmpfs/test2.db {}  ">"{.}.fasta \
+    #    ::: $(ls fasta-20180323-COI/300-0*.txt|grep -v new.txt)
+    #
+    # better/faster
+    time parallel --jobs 8 python3 -W ignore bin/dump-fasta.py  tmpfs/test4.db {} ">"{.}.fasta ::: $RUNDIR/250-*.txt
+    #
+    #or, if we have too mane *txt files and get "Argument list too long" error:
+    ls $RUNDIR|grep "\.txt$"| parallel --jobs 8 python3 -W ignore bin/dump-fasta.py  tmpfs/test4.db $RUNDIR/{} ">"$RUNDIR/{.}.fasta
 
 9. remove empty fasta files
 
-    $ find fasta-20180323-COI/ -size 0c -exec rm  {} \;
+    $ find $RUNDIR/ -size 0c -exec rm  {} \;
 
 
 *** TO BUILD the Qiime2 database continue to A1. ***
@@ -81,8 +109,8 @@ A2. create the database/qiime2 (we'll use qiime2-docker, the version matters)
     # time qiime tools import --type 'FeatureData[Sequence]' --input-path fs_otus.txt --output-path otus.qza
     # qiime tools import --type 'FeatureData[Taxonomy]'  --source-format HeaderlessTSVTaxonomyFormat --input-path fs_otu_taxonomy.txt --output-path ref-taxonomy.qza
 
-    # XXX this may take a long time..
-    # time qiime feature-classifier extract-reads --i-sequences otus.qza --p-f-primer GGWACWGGWTGAACWGTWTAYCCYCC --p-r-primer GGRGGRTASACSGTTCASCCSGTSCC  --p-trunc-len 290 --verbose --o-reads ref_seqs_coi_vertebrates.qza
+    # XXX this may take a long time and it's optional
+    # time qiime feature-classifier extract-reads --i-sequences otus.qza --p-f-primer GGWACWGGWTGAACWGTWTAYCCYCC --p-r-primer GGRGGRTASACSGTTCASCCSGTSCC [--p-trunc-len NNN] --verbose --o-reads ref_seqs_coi_vertebrates.qza
 
     # time qiime feature-classifier fit-classifier-naive-bayes --i-reference-reads ref_seqs_coi_vertebrates.qza --i-reference-taxonomy ref-taxonomy.qza --o-classifier coi-vertebrates-2017.8.qza
 
@@ -97,13 +125,20 @@ A2. create the database/qiime2 (we'll use qiime2-docker, the version matters)
 
 *** BLAST DB ***
 
-B1. filter all the fasta (only 10 duplicate sequences per organism)
+B1. filter all the fasta (only 5 duplicate sequences per organism)
 
-    $ time perl bin/filter_fasta_to_stdout.pl fasta-20171101/ > fasta-20171101.fasta
+    $ time perl bin/filter_fasta_to_stdout.pl $RUNDIR/ > fasta-$(date +"%Y%m%d")-filtered.fasta
 
 B2. create the database
 
-    $ makeblastdb -in fasta-20171101.fasta -input_type fasta  -title blueline-201711 -parse_seqids -dbtype nucl -out phydb201711
+    $ makeblastdb \
+        -logfile makeblastdb-$(date +"%Y%m%d-%H%M").log \
+        -title blueline-$(date +"%Y%m") \
+        -parse_seqids \
+        -dbtype nucl \
+        -input_type fasta \
+        -in fasta-$(date +"%Y%m%d")-filtered.fasta \
+        -out phydb$(date +"%Y%m")
 
 B3. copy it to the blast server
 
